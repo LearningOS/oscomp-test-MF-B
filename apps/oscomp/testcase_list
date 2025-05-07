@@ -1,2 +1,36 @@
-/musl/busybox sh /musl/libctest_testcode.sh
-/musl/basic
+/musl/busybox echo "#### OS COMP TEST GROUP START basic-musl ####"
+/musl/busybox echo "#### OS COMP TEST GROUP START glibc-musl ####"
+/musl/basic/brk
+/musl/basic/chdir
+/musl/basic/clone
+/musl/basic/close
+/musl/basic/dup2
+/musl/basic/dup
+/musl/basic/execve
+/musl/basic/exit
+/musl/basic/fork
+/musl/basic/fstat
+/musl/basic/getcwd
+/musl/basic/getdents
+/musl/basic/getpid
+/musl/basic/getppid
+/musl/basic/gettimeofday
+/musl/basic/mkdir_
+/musl/basic/mmap
+/musl/basic/mount
+/musl/basic/munmap
+/musl/basic/openat
+/musl/basic/open
+/musl/basic/pipe
+/musl/basic/read
+/musl/basic/times
+/musl/basic/umount
+/musl/basic/uname
+/musl/basic/unlink
+/musl/basic/wait
+/musl/basic/waitpid
+/musl/basic/write
+/musl/basic/yield
+/musl/basic/sleep
+/musl/busybox echo "#### OS COMP TEST GROUP END glibc-musl ####"
+/musl/busybox echo "#### OS COMP TEST GROUP END basic-musl ####"
