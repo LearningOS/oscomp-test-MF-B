@@ -1,5 +1,5 @@
 /musl/busybox echo "#### OS COMP TEST GROUP START basic-musl ####"
-/musl/busybox echo "#### OS COMP TEST GROUP START glibc-musl ####"
+/musl/busybox echo "#### OS COMP TEST GROUP START basic-glibc ####"
 /musl/basic/brk
 /musl/basic/chdir
 /musl/basic/clone
@@ -32,5 +32,5 @@
 /musl/basic/write
 /musl/basic/yield
 /musl/basic/sleep
-/musl/busybox echo "#### OS COMP TEST GROUP END glibc-musl ####"
+/musl/busybox echo "#### OS COMP TEST GROUP END basic-glibc ####"
 /musl/busybox echo "#### OS COMP TEST GROUP END basic-musl ####"
