@@ -9,6 +9,7 @@ extern crate alloc;
 mod entry;
 mod mm;
 mod syscall;
+mod signal;
 
 use alloc::vec::Vec;
 

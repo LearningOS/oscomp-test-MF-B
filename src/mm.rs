@@ -14,6 +14,7 @@ fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool)
         "Page fault at {:#x}, access_flags: {:#x?}",
         vaddr, access_flags
     );
+    //current_add_signal(SignalInfo::new(Signo::SIGSEGV, vaddr));
     if !is_user && !is_accessing_user_memory() {
         return false;
     }

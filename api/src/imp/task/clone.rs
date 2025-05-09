@@ -187,7 +187,9 @@ pub fn sys_clone(
         &builder.data(process_data).build()
     };
 
-    let thread_data = ThreadData::new();
+    let sig_manager = process.data::<ProcessData>().unwrap().sig_manager.clone();
+
+    let thread_data = ThreadData::new(sig_manager);
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
         thread_data.set_clear_child_tid(child_tid);
     }

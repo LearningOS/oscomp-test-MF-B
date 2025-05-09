@@ -10,6 +10,11 @@ use starry_core::{
 };
 
 pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
+    let exe_path = args[0].clone();
+    if exe_path.starts_with("#") {
+        return Some(0);
+    }
+
     let mut uspace = new_user_aspace_empty()
         .and_then(|mut it| {
             copy_from_kernel(&mut it)?;
@@ -17,7 +22,8 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
         })
         .expect("Failed to create user address space");
 
-    let exe_path = args[0].clone();
+    
+
     let (dir, name) = exe_path.rsplit_once('/').unwrap_or(("", &exe_path));
     set_current_dir(dir).expect("Failed to set current dir");
 
@@ -30,6 +36,8 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     task.ctx_mut().set_page_table_root(uspace.page_table_root());
 
     let process_data = ProcessData::new(exe_path, Arc::new(Mutex::new(uspace)));
+
+    let sig_manager = process_data.sig_manager.clone();
 
     FD_TABLE
         .deref_from(&process_data.ns)
@@ -44,7 +52,7 @@ pub fn run_user_app(args: &[String], envs: &[String]) -> Option<i32> {
     let tid = task.id().as_u64() as Pid;
     let process = init_proc().fork(tid).data(process_data).build();
 
-    let thread = process.new_thread(tid).data(ThreadData::new()).build();
+    let thread = process.new_thread(tid).data(ThreadData::new(sig_manager)).build();
     add_thread_to_table(&thread);
 
     task.init_task_ext(TaskExt::new(thread));

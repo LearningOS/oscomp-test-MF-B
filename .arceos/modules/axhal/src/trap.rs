@@ -22,6 +22,10 @@ pub static PAGE_FAULT: [fn(VirtAddr, MappingFlags, bool) -> bool];
 #[def_trap_handler]
 pub static SYSCALL: [fn(&mut TrapFrame, usize) -> isize];
 
+/// Signal handler function.
+#[def_trap_handler]
+pub static SIGNAL: [fn(&mut TrapFrame, bool) -> bool];
+
 #[allow(unused_macros)]
 macro_rules! handle_trap {
     ($trap:ident, $($args:tt)*) => {{

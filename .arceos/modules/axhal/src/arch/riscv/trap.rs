@@ -33,6 +33,16 @@ fn handle_page_fault(tf: &TrapFrame, mut access_flags: MappingFlags, is_user: bo
     }
 }
 
+fn handle_signal(tf: &mut TrapFrame, is_user: bool) {
+    if !handle_trap!(SIGNAL, tf,is_user) {
+        panic!(
+            "Unhandled SIGNAL @ {:#x} \n{:#x?}",
+            tf.sepc,
+            tf,
+        );
+    }
+}
+
 #[unsafe(no_mangle)]
 fn riscv_trap_handler(tf: &mut TrapFrame, from_user: bool) {
     let scause = scause::read();
@@ -60,6 +70,7 @@ fn riscv_trap_handler(tf: &mut TrapFrame, from_user: bool) {
                 panic!("Unhandled trap {:?} @ {:#x}:\n{:#x?}", cause, tf.sepc, tf);
             }
         }
+        handle_signal(tf, from_user);
     } else {
         panic!(
             "Unknown trap {:?} @ {:#x}:\n{:#x?}",

@@ -3,13 +3,14 @@
 use core::{
     alloc::Layout,
     cell::RefCell,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering}, time::Duration,
 };
 
 use alloc::{
     string::String,
     sync::{Arc, Weak},
 };
+use axerrno::{LinuxError, LinuxResult};
 use axhal::{
     arch::UspaceContext,
     time::{NANOS_PER_MICROS, NANOS_PER_SEC, monotonic_time_nanos},
@@ -17,11 +18,13 @@ use axhal::{
 use axmm::{AddrSpace, kernel_aspace};
 use axns::{AxNamespace, AxNamespaceIf};
 use axprocess::{Pid, Process, ProcessGroup, Session, Thread};
-use axsync::Mutex;
-use axtask::{TaskExtRef, TaskInner, current};
+use axsignal::api::{ProcessSignalManager, SignalActions, ThreadSignalManager, WaitQueue};
+use axsync::{Mutex, RawMutex};
+use axtask::{current, TaskExtRef, TaskInner};
 use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
+use axsignal::SignalActionFlags;
 
 use crate::time::TimeStat;
 
@@ -130,14 +133,17 @@ pub struct ThreadData {
     ///
     /// When the thread exits, the kernel clears the word at this address if it is not NULL.
     pub clear_child_tid: AtomicUsize,
+    /// the thread signal manager
+    pub sig_manager: Arc<ThreadSignalManager<RawMutex, MyWaitQueue>>,
 }
 
 impl ThreadData {
     /// Create a new [`ThreadData`].
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(proc: Arc<ProcessSignalManager<RawMutex, MyWaitQueue>>) -> Self {
         Self {
             clear_child_tid: AtomicUsize::new(0),
+            sig_manager: Arc::new(ThreadSignalManager::new(proc)),
         }
     }
 
@@ -153,6 +159,70 @@ impl ThreadData {
     }
 }
 
+/// A Signal axsignal::api::WaitQueue implementation for the process.
+#[derive(Default)]
+pub struct MyWaitQueue {
+    // 使用一个内部的原子计数器来标记是否有通知
+    inner: AtomicUsize,
+}
+
+impl WaitQueue for MyWaitQueue {
+    /// Waits for a notification, with an optional timeout.
+    ///
+    /// Returns `true` if a notification came, `false` if the timeout expired.
+    fn wait_timeout(&self, timeout: Option<Duration>) -> bool {
+        // 当前值
+        let current = self.inner.load(Ordering::Relaxed);
+        
+        // 设置等待的起始时间
+        let start_time = axhal::time::wall_time();
+        
+        loop {
+            // 检查是否有新通知（值是否改变）
+            let now = self.inner.load(Ordering::Acquire);
+            if now != current {
+                return true; // 收到通知
+            }
+            
+            // 检查是否超时
+            if let Some(timeout) = timeout {
+                let elapsed = axhal::time::wall_time().saturating_sub(start_time);
+                if elapsed >= timeout {
+                    return false; // 超时
+                }
+                
+                // 短暂休眠以减少 CPU 使用
+                axtask::yield_now();
+            } else {
+                // 无超时，继续等待
+                axtask::yield_now();
+            }
+        }
+    }
+
+    /// Waits for a notification.
+    fn wait(&self) {
+        self.wait_timeout(None);
+    }
+
+    /// Notifies a waiting thread.
+    ///
+    /// Returns `true` if a thread was notified.
+    fn notify_one(&self) -> bool {
+        // 增加计数器值，确保所有等待的线程都能观察到变化
+        self.inner.fetch_add(1, Ordering::Release);
+        
+        // 由于无法确定是否真正唤醒了线程，总是返回 true
+        // 这是一个简化的实现
+        true
+    }
+
+    /// Notifies all waiting threads.
+    fn notify_all(&self) {
+        while self.notify_one() {}
+    }
+}
+
 /// Extended data for [`Process`].
 pub struct ProcessData {
     /// The executable path
@@ -165,17 +235,23 @@ pub struct ProcessData {
     heap_bottom: AtomicUsize,
     /// The user heap top
     heap_top: AtomicUsize,
+    /// 进程信号管理器
+    pub sig_manager: Arc<ProcessSignalManager<RawMutex, MyWaitQueue>>
 }
 
 impl ProcessData {
     /// Create a new [`ProcessData`].
     pub fn new(exe_path: String, aspace: Arc<Mutex<AddrSpace>>) -> Self {
+        let actions = Arc::new(Mutex::new(SignalActions::default()));
+        // 默认恢复函数地址，根据你的需求设置合适的值
+        let default_restorer = SignalActionFlags::RESTORER.bits() as usize;
         Self {
             exe_path: RwLock::new(exe_path),
             aspace,
             ns: AxNamespace::new_thread_local(),
             heap_bottom: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
             heap_top: AtomicUsize::new(axconfig::plat::USER_HEAP_BASE),
+            sig_manager: Arc::new(ProcessSignalManager::new(actions, default_restorer)),
         }
     }
 
@@ -266,4 +342,24 @@ pub fn add_thread_to_table(thread: &Arc<Thread>) {
         return;
     }
     session_table.insert(session.sid(), &session);
+}
+
+/// 根据tid获取线程
+pub fn get_thread(tid: Pid) -> LinuxResult<Arc<Thread>> {
+    THREAD_TABLE.read().get(&tid).ok_or(LinuxError::ESRCH)
+}
+/// 根据pid获取进程
+pub fn get_process(pid: Pid) -> LinuxResult<Arc<Process>> {
+    PROCESS_TABLE.read().get(&pid).ok_or(LinuxError::ESRCH)
+}
+/// 根据pgid获取进程组
+pub fn get_process_group(pgid: Pid) -> LinuxResult<Arc<ProcessGroup>> {
+    PROCESS_GROUP_TABLE
+        .read()
+        .get(&pgid)
+        .ok_or(LinuxError::ESRCH)
+}
+/// 根据sid获取会话
+pub fn get_session(sid: Pid) -> LinuxResult<Arc<Session>> {
+    SESSION_TABLE.read().get(&sid).ok_or(LinuxError::ESRCH)
 }
